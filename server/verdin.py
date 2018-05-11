@@ -1,41 +1,48 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
-from flask import Flask, jsonify, request
-from flask_cors import CORS
 import os
 import uuid
 import datetime
+import csv
+import collections
+import subprocess 
+import argparse
 
-VERDINWS = os.path.dirname(os.path.abspath(__file__))
 
-app = Flask(__name__)
-CORS(app)
-app.config['VERDIN'] = os.path.join(VERDINWS, "..")
-app.config['UPLOAD_FOLDER'] = os.path.join(app.config['VERDIN'], "data")
+def localRef(genome, chrom, start, end):
+    output = subprocess.check_output(['samtools', 'faidx', genome, '{}:{}-{}'.format(chrom, start, end)])
+    return ''.join(output.split('\n')[1:]).upper()
 
-@app.route('/primers', methods=['GET'])
-def generate():
-    genome = request.args.get("build")
-    chr1 = request.args.get("chr1")
-    pos1 = request.args.get("pos1")
-    chr2 = request.args.get("chr2")
-    pos2 = request.args.get("pos2")
-    svt = request.args.get("svtype")
+def primerDesign(filename, genome):
+    # Parameters
+    sangerLen = 500
+    pcrLen = 5000
+    primerToVariantSpacer = 50
 
-    # Generate UUID
-    uuidstr = str(uuid.uuid4())
-    sf = os.path.join(app.config['UPLOAD_FOLDER'], uuidstr[0:2])
-    if not os.path.exists(sf):
-        os.makedirs(sf)
+    # Load variants
+    variants = collections.defaultdict(list)
+    with open(filename, 'rb') as csvfile:
+        prireader = csv.DictReader(csvfile, delimiter='\t')
+        for row in prireader:
+            variants[row['type']].append((row['chr1'], int(row['pos1']), row['chr2'], int(row['pos2'])))
 
-    # Generate input file
-    infile = os.path.join(sf, "verdin_" + uuidstr + ".variants")
-    with open(infile, "w") as infi:
-        print(chr1, pos1, chr2, pos2, svt, file=infi)
-        infi.close()
+    # Run primer design for each variant type
+    for t in variants.keys():
+        if ((t.startswith("DEL")) or (t.startswith("SNV")) or (t.startswith("INS"))):
+            for v in variants[t]:
+                ls = max(0, v[1] - primerToVariantSpacer - pcrLen)
+                le = max(ls + 1, v[1] - primerToVariantSpacer)
+                seq1 = localRef(genome, v[0], ls, le)
+                ls = v[3] + primerToVariantSpacer
+                le = v[3] + primerToVariantSpacer + pcrLen
+                seq2 = localRef(genome, v[2], ls, le)
+                print(seq1, seq2)
 
-    return jsonify(chrom1=chr1)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3300, debug=True, threaded=True)
+    parser = argparse.ArgumentParser(description='Verdin')
+    parser.add_argument('-v', '--variants', required=True, metavar="variants.tsv", dest='variants', help='input variants')
+    parser.add_argument('-g', '--genome', required=True, metavar="genome.fa.gz", dest='genome', help='input genome')
+    args = parser.parse_args()
+    primerDesign(args.variants, args.genome)
