@@ -14,7 +14,12 @@ CORS(app)
 
 @app.route('/primers', methods=['GET'])
 def generate():
-    chrom1 = request.args.get("chr1")
+    genome = request.args.get("build")
+    chr1 = request.args.get("chr1")
+    pos1 = request.args.get("pos1")
+    chr2 = request.args.get("chr2")
+    pos2 = request.args.get("pos2")
+    svt = request.args.get("svtype")
     return jsonify(chrom1=chrom1)
 
 if __name__ == '__main__':
