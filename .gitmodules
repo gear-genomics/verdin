@@ -1,0 +1,3 @@
+[submodule "src/silica"]
+	path = src/silica
+	url = https://github.com/gear-genomics/silica.git

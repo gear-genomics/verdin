@@ -17,7 +17,8 @@ app.config['UPLOAD_FOLDER'] = os.path.join(app.config['VERDIN'], "data")
 
 @app.route('/primers', methods=['GET'])
 def generate():
-    genome = request.args.get("build")
+    #genome = request.args.get("build")
+    genome = os.path.join(app.config['VERDIN'], "fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz")
     chr1 = request.args.get("chr1")
     pos1 = request.args.get("pos1")
     chr2 = request.args.get("chr2")
@@ -38,7 +39,8 @@ def generate():
         infi.close()
 
     # Run primer design
-    #primerDesign(infile, genome)
+    prefix = os.path.join(sf, "verdin_" + uuidstr)
+    primerDesign(infile, genome, prefix)
 
     return jsonify(chrom1=chr1)
 
