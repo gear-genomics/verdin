@@ -41,7 +41,7 @@ def localRef(genome, chrom, start, end):
 def primerDesign(filename, genome, prefix):
     # Parameters
     #params = { 'sangerLen': 500, 'pcrLen': 5000, 'spacer': 50, 'nprimer': 1000, 'PRIMER_MAX_TM': 65}
-    params = { 'sangerLen': 500, 'pcrLen': 200, 'spacer': 50, 'nprimer': 25, 'PRIMER_MAX_TM': 65, 'PRIMER_MIN_TM': 56, 'PRIMER_OPT_TM': 62, 'PRIMER_OPT_SIZE': 22, 'PRIMER_MIN_SIZE': 20, 'PRIMER_MAX_SIZE': 24 }
+    params = { 'sangerLen': 500, 'pcrLen': 200, 'spacer': 50, 'nprimer': 5, 'PRIMER_MAX_TM': 65, 'PRIMER_MIN_TM': 56, 'PRIMER_OPT_TM': 62, 'PRIMER_OPT_SIZE': 22, 'PRIMER_MIN_SIZE': 20, 'PRIMER_MAX_SIZE': 24 }
 
     # Load variants
     variants = collections.defaultdict(list)
@@ -70,6 +70,21 @@ def primerDesign(filename, genome, prefix):
     # Generate primer candidates
     primer3Out = prefix + ".primer3.output"
     primer3(primer3In, primer3Out)
+
+    # Silica input
+    silicaIn = prefix + ".silica.input"
+    with open(silicaIn, 'w') as f:
+        with open(primer3Out, 'rb') as keyvalf:
+            seqreader = csv.reader(keyvalf, delimiter='=')
+            seqid = "NA"
+            for row in seqreader:
+                if row[0] == 'SEQUENCE_ID':
+                    seqid = row[1]
+                if row[0].endswith("_SEQUENCE"):
+                    print(">" + seqid + "_" + row[0], file=f)
+                    print(row[1], file=f)
+        
+    
                 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Verdin')
