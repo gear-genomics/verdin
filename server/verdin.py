@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
+from flask import jsonify
 import os
 import uuid
 import datetime
@@ -36,10 +37,10 @@ def primer3(primer3In, primer3Out):
     subprocess.call(['primer3_core', '--output=' + primer3Out, primer3In])
 
 def silicaStrict(genome, silicaIn, silicaOut1, silicaOut2):
-    subprocess.call(['silica', '-q', '-m', '5', '-d', '0', '-f', 'json', '-c', '55', '-p', silicaOut1, '-o', silicaOut2, '-g', genome, silicaIn])
+    subprocess.call(['silica', '-q', '-m', '5', '-d', '0', '-f', 'json', '-p', silicaOut1, '-o', silicaOut2, '-g', genome, silicaIn])
 
 def silica(genome, silicaIn, silicaOut1, silicaOut2):
-    subprocess.call(['silica', '-f', 'json', '-c', '55', '-p', silicaOut1, '-o', silicaOut2, '-g', genome, silicaIn])
+    subprocess.call(['silica', '-f', 'json', '-c', '50', '-p', silicaOut1, '-o', silicaOut2, '-g', genome, silicaIn])
     
 def localRef(genome, chrom, start, end):
     output = subprocess.check_output(['samtools', 'faidx', genome, '{}:{}-{}'.format(chrom, start, end)])
@@ -47,8 +48,7 @@ def localRef(genome, chrom, start, end):
 
 def primerDesign(filename, genome, prefix):
     # Parameters
-    #params = { 'sangerLen': 500, 'pcrLen': 5000, 'spacer': 50, 'nprimer': 1000, 'PRIMER_MAX_TM': 65}
-    params = { 'sangerLen': 500, 'pcrLen': 500, 'spacer': 50, 'nprimer': 100, 'PRIMER_MAX_TM': 65, 'PRIMER_MIN_TM': 56, 'PRIMER_OPT_TM': 62, 'PRIMER_OPT_SIZE': 22, 'PRIMER_MIN_SIZE': 20, 'PRIMER_MAX_SIZE': 24 }
+    params = { 'pcrLen': 500, 'spacer': 50, 'nprimer': 100, 'PRIMER_MAX_TM': 65, 'PRIMER_MIN_TM': 56, 'PRIMER_OPT_TM': 62, 'PRIMER_OPT_SIZE': 22, 'PRIMER_MIN_SIZE': 20, 'PRIMER_MAX_SIZE': 24 }
 
     # Load variants
     variants = collections.defaultdict(dict)
@@ -122,55 +122,112 @@ def primerDesign(filename, genome, prefix):
                 scorelst.append((sumhits, i, j))
 
     # Process primers in-order
-    vartodo = numpy.full(idcounter, True)
+    primerlst = list()
     scorelst = sorted(scorelst)
-    for (score, idname, candidate) in scorelst:
-        if vartodo[idname]:
-            with open(silicaIn, 'w') as f:
-                print(">" + str(idname) + "_PRIMER_LEFT_" + str(candidate) + "_SEQUENCE", file=f)
-                print(priseq[(idname * params['nprimer'] + candidate, 0)], file=f)
-                print(">" + str(idname) + "_PRIMER_RIGHT_" + str(candidate) + "_SEQUENCE", file=f)
-                print(priseq[(idname * params['nprimer'] + candidate, 1)], file=f)
+    vartodo = numpy.full(idcounter, True)
+    used = numpy.full(idcounter * params['nprimer'], False)
+    while sum(vartodo):
+        print("Primer selection for", sum(vartodo), "variants,", len(scorelst) - sum(used), " primer pairs left for checking.")
+        varincl = numpy.full(idcounter, False)
+        with open(silicaIn, 'w') as f:
+            for (score, idname, candidate) in scorelst:
+                if sum(varincl) == sum(vartodo):
+                    break
+                if used[idname * params['nprimer'] + candidate]:
+                    continue
+                if (vartodo[idname]) and (not varincl[idname]):
+                    varincl[idname] = True
+                    print(">" + str(idname) + "_PRIMER_LEFT_" + str(candidate) + "_SEQUENCE", file=f)
+                    print(priseq[(idname * params['nprimer'] + candidate, 0)], file=f)
+                    print(">" + str(idname) + "_PRIMER_RIGHT_" + str(candidate) + "_SEQUENCE", file=f)
+                    print(priseq[(idname * params['nprimer'] + candidate, 1)], file=f)
+                    used[idname * params['nprimer'] + candidate] = True
+        if not sum(varincl):
+            print("Leftover variants no primers were found", sum(vartodo))
+            quit()
 
-            # Run Silica
-            silica(genome, silicaIn, silicaOut1, silicaOut2)
-            pricount = collections.Counter()
-            with open(silicaOut1) as prijson:
-                for line in prijson:
-                    if line.startswith('{'):
-                        line = line.strip().rstrip(',')
-                        d = json.loads(line)
-                        if (int(d['Tm']) >= params['PRIMER_MIN_TM']) and (int(d['Tm']) <= params['PRIMER_MAX_TM']):
-                            pricount[d['Name']] += 1
-            ampcount = collections.Counter()
-            ampjs = dict()
-            with open(silicaOut2) as ampjson:
-                for line in ampjson:
-                    if line.startswith('{'):
-                        line = line.strip().rstrip(',')
-                        d = json.loads(line)
-                        forname = d['ForName'].replace("_LEFT_","_")
-                        revname = d['RevName'].replace("_RIGHT_","_")
-                        if forname == revname:
-                            ampcount[forname] += 1
-                            idname = int(forname.split('_')[0])
-                            ampjs[idname] = d
-                            
-            for pleft in pricount.keys():
-                if "_LEFT_" in pleft:
-                    pright = pleft.replace("_LEFT_", "_RIGHT_")
-                    amp = pleft.replace("_LEFT_", "_")
-                    t = variants[idname]
-                    if ((t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS"))):
-                        if ampcount[amp] == 1:
-                            if (ampjs[idname]['Chrom'] == t['chr1']) and (ampjs[idname]['ForPos'] < t['pos1']) and (ampjs[idname]['RevPos'] > t['pos2']):
-                                #print(t)
-                                #print(ampjs[idname])
-                                #print(pricount[pleft])
-                                #print(pricount[pright])
-                                #print(ampcount[amp])
-                                print(idname)
-                                vartodo[idname] = False
+        # Run Silica
+        silica(genome, silicaIn, silicaOut1, silicaOut2)
+
+        # Get primer and amplicon counts
+        pricount = collections.Counter()
+        prleftjs = dict()
+        prrightjs = dict()
+        with open(silicaOut1) as prijson:
+            for line in prijson:
+                if line.startswith('{'):
+                    line = line.strip().rstrip(',')
+                    d = json.loads(line)
+                    if (int(d['Tm']) >= params['PRIMER_MIN_TM']) and (int(d['Tm']) <= params['PRIMER_MAX_TM']):
+                        pricount[d['Name']] += 1
+                        fields = d["Name"].split('_')
+                        idname = int(fields[0])
+                        lr = fields[2]
+                        candidate = int(fields[3])
+                        t = variants[idname]
+                        if lr == "LEFT":
+                            if ((t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS"))):
+                                if (d['Chrom'] == t['chr1']) and (d['Pos'] < t['pos1']) and (d['Pos'] + params['pcrLen'] > t['pos1']):
+                                    prleftjs[idname] = d
+                        if lr == "RIGHT":
+                            if ((t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS"))):
+                                if (d['Chrom'] == t['chr2']) and (d['Pos'] > t['pos2']) and (d['Pos'] < t['pos2'] + params['pcrLen']):
+                                    prrightjs[idname] = d
+
+        ampcount = collections.Counter()
+        ampjs = dict()
+        with open(silicaOut2) as ampjson:
+            for line in ampjson:
+                if line.startswith('{'):
+                    line = line.strip().rstrip(',')
+                    d = json.loads(line)
+                    forname = d['ForName'].replace("_LEFT_","_")
+                    revname = d['RevName'].replace("_RIGHT_","_")
+                    if forname == revname:
+                        ampcount[forname] += 1
+                        idname = int(forname.split('_')[0])
+                        ampjs[idname] = d
+                        
+        # Check primers
+        for pleft in pricount.keys():
+            if "_LEFT_" in pleft:
+                pright = pleft.replace("_LEFT_", "_RIGHT_")
+                amp = pleft.replace("_LEFT_", "_")
+                idname = int(pleft.split('_')[0])
+                if idname in prleftjs:
+                    if idname in prrightjs:
+                        t = variants[idname]
+                        if ((t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS"))):
+                            if ampcount[amp] == 1:
+                                if (ampjs[idname]['Chrom'] == t['chr1']) and (ampjs[idname]['ForPos'] < t['pos1']) and (ampjs[idname]['RevPos'] > t['pos2']):
+                                    vartodo[idname] = False
+                                elif ampcount[amp] == 0:
+                                    vartodo[idname] = False
+                if vartodo[idname]:
+                    if 0:
+                        print(t)
+                        print(pricount[pleft], pricount[pright], ampcount[amp])
+                        print(prleftjs[idname])
+                        print(prrightjs[idname])
+                        if ampcount[amp]:
+                            print(ampjs[idname])
+                else:
+                    out = t
+                    out['Primer1Chrom'] = prleftjs[idname]['Chrom']
+                    out['Primer1Pos'] = prleftjs[idname]['Pos']
+                    out['Primer1Seq'] = prleftjs[idname]['Seq']
+                    out['Primer1Tm'] = prleftjs[idname]['Tm']
+                    out['Primer1Ori'] = prleftjs[idname]['Ori']
+                    out['Primer1Hits'] = pricount[pleft]
+                    out['Primer2Chrom'] = prrightjs[idname]['Chrom']
+                    out['Primer2Pos'] = prrightjs[idname]['Pos']
+                    out['Primer2Seq'] = prrightjs[idname]['Seq']
+                    out['Primer2Tm'] = prrightjs[idname]['Tm']
+                    out['Primer2Ori'] = prrightjs[idname]['Ori']
+                    out['Primer2Hits'] = pricount[pright]
+                    primerlst.append(out)
+    return primerlst
+                        
                 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Verdin')
@@ -178,4 +235,8 @@ if __name__ == '__main__':
     parser.add_argument('-g', '--genome', required=True, metavar="genome.fa.gz", dest='genome', help='input genome')
     parser.add_argument('-p', '--prefix', required=True, metavar="outprefix", dest='prefix', help='output prefix')
     args = parser.parse_args()
-    primerDesign(args.variants, args.genome, args.prefix)
+    primerlst = primerDesign(args.variants, args.genome, args.prefix)
+    verdinOut = args.prefix + ".verdin"
+    with open(verdinOut, 'w') as vout:
+        json.dump(primerlst, vout)
+

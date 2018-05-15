@@ -40,9 +40,8 @@ def generate():
 
     # Run primer design
     prefix = os.path.join(sf, "verdin_" + uuidstr)
-    primerDesign(infile, genome, prefix)
-
-    return jsonify(chrom1=chr1)
+    primerlst = primerDesign(infile, genome, prefix)
+    return jsonify(primerlst)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3300, debug=True, threaded=True)
