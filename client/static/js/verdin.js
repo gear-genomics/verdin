@@ -39,12 +39,22 @@ function displayResults() {
     resultTab.innerHTML = '<p class="text-danger">Return Json: ' + JSON.stringify(results) + '</p>'
 }
 
+
+var exampleVariants = [
+    {"chr1": "chr7", "pos1": 20300000, "chr2": "chr7", "pos2": 20600000, "type": "DEL_3to5"},
+    {"chr1": "chr7", "pos1": 40300000, "chr2": "chr7", "pos2": 40600000, "type": "DEL_3to5"}
+]
+
+
 function loadExample() {
     resultTab.innerHTML = spinnerHtml
     var req = new XMLHttpRequest()
+    var url = "http://0.0.0.0:3300/primers"
+    var data = JSON.stringify(exampleVariants)
     req.addEventListener('load', displayResults)
-    req.open('GET', 'http://localhost:3300/primers?build=hg19&chr1=chr1&pos1=7878&chr2=chr7&pos2=56889&svtype=BND_3to5')
-    req.send()
+    req.open('POST', url, true)
+    req.setRequestHeader("Content-type", "application/json")
+    req.send(data)
 }
 
 function displayError(message) {

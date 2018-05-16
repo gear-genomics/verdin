@@ -15,8 +15,14 @@ CORS(app)
 app.config['VERDIN'] = os.path.join(VERDINWS, "..")
 app.config['UPLOAD_FOLDER'] = os.path.join(app.config['VERDIN'], "data")
 
+@app.route('/primers', methods=['POST'])
+def generatePost():
+    variants = request.get_json()
+    print(variants)
+    return jsonify(variants)
+    
 @app.route('/primers', methods=['GET'])
-def generate():
+def generateGet():
     #genome = request.args.get("build")
     genome = os.path.join(app.config['VERDIN'], "fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz")
     chr1 = request.args.get("chr1")
