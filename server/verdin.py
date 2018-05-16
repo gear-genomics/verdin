@@ -144,7 +144,7 @@ def primerDesign(filename, genome, prefix):
                     used[idname * params['nprimer'] + candidate] = True
         if not sum(varincl):
             print("Leftover variants no primers were found", sum(vartodo))
-            quit()
+            return primerlst
 
         # Run Silica
         silica(genome, silicaIn, silicaOut1, silicaOut2)

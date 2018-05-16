@@ -16,7 +16,6 @@ submitButton.addEventListener('click', function () {
 
 var exampleButton = document.getElementById('btn-example')
 exampleButton.addEventListener('click', function () {
-    resultLink.click()
     loadExample()
 })
 
@@ -26,11 +25,30 @@ var spinnerHtml = '<i class="fas fa-spinner fa-2x spinner"></i>'
 
 function run() {
     resultTab.innerHTML = spinnerHtml
-    //ToDo: Parse input text fields and generate URL
+
+    // Parse variants as json
+    var variants = varsInput.value.split('\n').filter(function (line) { return line !== ""; })
+    var arr = []
+    for (var i =0; i < variants.length; ++i) {
+	fields = variants[i].split(',')
+	var jsdict = { "chr1": fields[0], "pos1": parseInt(fields[1]), "chr2": fields[2], "pos2": parseInt(fields[3]), "type": fields[4] }
+	arr.push(jsdict)
+    }
+
+    // Send json post request
     var req = new XMLHttpRequest()
+    var url = "http://0.0.0.0:3300/primers"
+    var data = JSON.stringify(arr)
     req.addEventListener('load', displayResults)
-    req.open('GET', 'http://localhost:3300/primers?build=hg19&chr1=chr1&pos1=7878&chr2=chr7&pos2=56889&svtype=BND_3to5')
-    req.send()
+    req.open('POST', url, true)
+    req.setRequestHeader("Content-type", "application/json")
+    req.send(data)
+
+    // Get request
+    //var req = new XMLHttpRequest()
+    //req.addEventListener('load', displayResults)
+    //req.open('GET', 'http://0.0.0.0:3300/primers?chr1=1&pos1=7878&chr2=7&pos2=56889&type=BND_3to5')
+    //req.send()
 }
 
 function displayResults() {
@@ -39,22 +57,8 @@ function displayResults() {
     resultTab.innerHTML = '<p class="text-danger">Return Json: ' + JSON.stringify(results) + '</p>'
 }
 
-
-var exampleVariants = [
-    {"chr1": "chr7", "pos1": 20300000, "chr2": "chr7", "pos2": 20600000, "type": "DEL_3to5"},
-    {"chr1": "chr7", "pos1": 40300000, "chr2": "chr7", "pos2": 40600000, "type": "DEL_3to5"}
-]
-
-
 function loadExample() {
-    resultTab.innerHTML = spinnerHtml
-    var req = new XMLHttpRequest()
-    var url = "http://0.0.0.0:3300/primers"
-    var data = JSON.stringify(exampleVariants)
-    req.addEventListener('load', displayResults)
-    req.open('POST', url, true)
-    req.setRequestHeader("Content-type", "application/json")
-    req.send(data)
+    document.getElementById('variants').value = "1,25889628,1,25889638,DEL_3to5\n1,109792918,1,109792928,DEL_3to5\n"
 }
 
 function displayError(message) {
