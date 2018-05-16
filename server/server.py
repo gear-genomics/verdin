@@ -1,12 +1,11 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
+import os
+import uuid
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from verdin import primerDesign
-import os
-import uuid
-import datetime
 
 VERDINWS = os.path.dirname(os.path.abspath(__file__))
 
@@ -38,18 +37,14 @@ def generate(inputjs):
     prefix = os.path.join(sf, "verdin_" + uuidstr)
     primerlst = primerDesign(infile, genome, prefix)
     return jsonify(primerlst)
-    
 
 @app.route('/primers', methods=['POST'])
 def generatePost():
-    genome = os.path.join(app.config['VERDIN'], "fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz")
     variants = request.get_json()
     return generate(variants)
-    
+
 @app.route('/primers', methods=['GET'])
 def generateGet():
-    #genome = request.args.get("build")
-    genome = os.path.join(app.config['VERDIN'], "fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz")
     variants = [{"chr1": request.args.get("chr1"), "pos1": request.args.get("pos1"), "chr2": request.args.get("chr2"), "pos2": request.args.get("pos2"), "type": request.args.get("type")}]
     return generate(variants)
 

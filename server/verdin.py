@@ -1,20 +1,18 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
-from flask import jsonify
-import os
-import uuid
-import datetime
+import sys
 import csv
 import collections
-import subprocess 
+import subprocess
 import argparse
 import json
 import numpy
-import sys
+
+
 
 def revcpl(seq):
-    complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
+    complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A', 'N': 'N'}
     return "".join(complement.get(base, base) for base in reversed(seq))
 
 def primer3Input(params, seq1, seq2, idcounter, f):
@@ -46,14 +44,14 @@ def silicaStrict(genome, silicaIn, silicaOut1, silicaOut2):
 
 def silica(genome, silicaIn, silicaOut1, silicaOut2):
     subprocess.call(['silica', '-f', 'json', '-c', '50', '-p', silicaOut1, '-o', silicaOut2, '-g', genome, silicaIn])
-    
+
 def localRef(genome, chrom, start, end):
     output = subprocess.check_output(['samtools', 'faidx', genome, '{}:{}-{}'.format(chrom, start, end)])
     return ''.join(output.split('\n')[1:]).upper()
 
 def primerDesign(filename, genome, prefix):
     # Parameters
-    params = { 'pcrLen': 500, 'spacer': 50, 'nprimer': 100, 'PRIMER_MAX_TM': 65, 'PRIMER_MIN_TM': 56, 'PRIMER_OPT_TM': 62, 'PRIMER_OPT_SIZE': 22, 'PRIMER_MIN_SIZE': 20, 'PRIMER_MAX_SIZE': 24 }
+    params = {'pcrLen': 500, 'spacer': 50, 'nprimer': 100, 'PRIMER_MAX_TM': 65, 'PRIMER_MIN_TM': 56, 'PRIMER_OPT_TM': 62, 'PRIMER_OPT_SIZE': 22, 'PRIMER_MIN_SIZE': 20, 'PRIMER_MAX_SIZE': 24}
 
     # Load variants
     variants = collections.defaultdict(dict)
@@ -70,7 +68,7 @@ def primerDesign(filename, genome, prefix):
     with open(primer3In, 'w') as f:
         for idname in variants.keys():
             t = variants[idname]
-            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
+            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
                 ls = max(0, t['pos1'] - params['spacer'] - params['pcrLen'])
                 le = max(ls + 1, t['pos1'] - params['spacer'])
                 seq1 = localRef(genome, t['chr1'], ls, le)
@@ -104,11 +102,11 @@ def primerDesign(filename, genome, prefix):
                 ls = t['pos2'] - params['spacer'] - params['pcrLen']
                 if t['type'].startswith("DUP"):
                     ls = max(t['pos1'] + params['spacer'], ls)
-                le = max(ls + 1,  t['pos2'] - params['spacer'])
+                le = max(ls + 1, t['pos2'] - params['spacer'])
                 seq2 = revcpl(localRef(genome, t['chr2'], ls, le))
             else:
                 print("Unknown variant type:", t['type'], file=sys.stderr)
-                return([])
+                return []
             primer3Input(params, seq1, seq2, idname, f)
         f.close()
 
@@ -131,7 +129,7 @@ def primerDesign(filename, genome, prefix):
     silicaOut1 = prefix + ".silica.primer.output"
     silicaOut2 = prefix + ".silica.amplicon.output"
     silicaStrict(genome, silicaIn, silicaOut1, silicaOut2)
-    
+
     # Primer count table
     pritable = numpy.full((idcounter * params['nprimer'], 2), 0)
     priseq = dict()
@@ -207,7 +205,7 @@ def primerDesign(filename, genome, prefix):
                         candidate = int(fields[3])
                         t = variants[idname]
                         if lr == "LEFT":
-                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
+                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
                                 if (d['Chrom'] == t['chr1']) and (d['Pos'] < t['pos1']) and (d['Pos'] + params['pcrLen'] > t['pos1']) and (d['Ori'] == "forward"):
                                     prleftjs[idname] = d
                             elif (t['type'] == "INV_3to3") or (t['type'] == "BND_3to3"):
@@ -220,14 +218,14 @@ def primerDesign(filename, genome, prefix):
                                 if (d['Chrom'] == t['chr1']) and (d['Pos'] > t['pos1']) and (d['Pos'] < t['pos1'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prleftjs[idname] = d
                         if lr == "RIGHT":
-                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
+                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
                                 if (d['Chrom'] == t['chr2']) and (d['Pos'] > t['pos2']) and (d['Pos'] < t['pos2'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prrightjs[idname] = d
                             elif (t['type'] == "INV_3to3") or (t['type'] == "BND_3to3"):
                                 if (d['Chrom'] == t['chr2']) and (d['Pos'] < t['pos2']) and (d['Pos'] + params['pcrLen'] > t['pos2']) and (d['Ori'] == "forward"):
                                     prrightjs[idname] = d
                             elif (t['type'] == "INV_5to5") or (t['type'] == "BND_5to5"):
-                                if (d['Chrom'] == t['chr1']) and (d['Pos'] > t['pos2']) and (d['Pos'] < t['pos2'] + params['pcrLen']) and (d['Ori'] == "reverse"):
+                                if (d['Chrom'] == t['chr2']) and (d['Pos'] > t['pos2']) and (d['Pos'] < t['pos2'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prrightjs[idname] = d
                             elif (t['type'].startswith("DUP")) or (t['type'] == "BND_5to3"):
                                 if (d['Chrom'] == t['chr2']) and (d['Pos'] < t['pos2']) and (d['Pos'] + params['pcrLen'] > t['pos2']) and (d['Ori'] == "forward"):
@@ -240,13 +238,13 @@ def primerDesign(filename, genome, prefix):
                 if line.startswith('{'):
                     line = line.strip().rstrip(',')
                     d = json.loads(line)
-                    forname = d['ForName'].replace("_LEFT_","_")
-                    revname = d['RevName'].replace("_RIGHT_","_")
+                    forname = d['ForName'].replace("_LEFT_", "_")
+                    revname = d['RevName'].replace("_RIGHT_", "_")
                     if forname == revname:
                         ampcount[forname] += 1
                         idname = int(forname.split('_')[0])
                         ampjs[idname] = d
-                        
+
         # Check primers
         for pleft in pricount.keys():
             if "_LEFT_" in pleft:
@@ -260,20 +258,12 @@ def primerDesign(filename, genome, prefix):
                             vartodo[idname] = False
                         else:
                             # For small variants we may have one amplicon overlapping the variant
-                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS")):
+                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")):
                                 if ampcount[amp] == 1:
                                     if (ampjs[idname]['Chrom'] == t['chr1']) and (ampjs[idname]['ForPos'] < t['pos1']) and (ampjs[idname]['RevPos'] > t['pos2']):
                                         vartodo[idname] = False
 
-                if vartodo[idname]:
-                    if 0:
-                        print(t)
-                        print(pricount[pleft], pricount[pright], ampcount[amp])
-                        print(prleftjs[idname])
-                        print(prrightjs[idname])
-                        if ampcount[amp]:
-                            print(ampjs[idname])
-                else:
+                if not vartodo[idname]:
                     out = t
                     out['Primer1Chrom'] = prleftjs[idname]['Chrom']
                     out['Primer1Pos'] = prleftjs[idname]['Pos']
@@ -289,16 +279,14 @@ def primerDesign(filename, genome, prefix):
                     out['Primer2Hits'] = pricount[pright]
                     primerlst.append(out)
     return primerlst
-                        
-                
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Verdin')
     parser.add_argument('-v', '--variants', required=True, metavar="variants.tsv", dest='variants', help='input variants')
     parser.add_argument('-g', '--genome', required=True, metavar="genome.fa.gz", dest='genome', help='input genome')
     parser.add_argument('-p', '--prefix', required=True, metavar="outprefix", dest='prefix', help='output prefix')
     args = parser.parse_args()
-    primerlst = primerDesign(args.variants, args.genome, args.prefix)
+    plst = primerDesign(args.variants, args.genome, args.prefix)
     verdinOut = args.prefix + ".verdin"
     with open(verdinOut, 'w') as vout:
-        json.dump(primerlst, vout)
-
+        json.dump(plst, vout)
