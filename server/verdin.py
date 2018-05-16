@@ -11,6 +11,7 @@ import subprocess
 import argparse
 import json
 import numpy
+import sys
 
 def revcpl(seq):
     complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
@@ -69,34 +70,45 @@ def primerDesign(filename, genome, prefix):
     with open(primer3In, 'w') as f:
         for idname in variants.keys():
             t = variants[idname]
-            if ((t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS"))):
+            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
                 ls = max(0, t['pos1'] - params['spacer'] - params['pcrLen'])
                 le = max(ls + 1, t['pos1'] - params['spacer'])
                 seq1 = localRef(genome, t['chr1'], ls, le)
                 ls = t['pos2'] + params['spacer']
                 le = t['pos2'] + params['spacer'] + params['pcrLen']
                 seq2 = localRef(genome, t['chr2'], ls, le)
-            elif (t['type'] == "INV_3to3"):
+            elif (t['type'] == "INV_3to3") or (t['type'] == "BND_3to3"):
                 ls = max(0, t['pos1'] - params['spacer'] - params['pcrLen'])
                 le = max(ls + 1, t['pos1'] - params['spacer'])
                 seq1 = localRef(genome, t['chr1'], ls, le)
-                ls = max(t['pos1'] + params['spacer'], t['pos2'] - params['spacer'] - params['pcrLen'])
+                ls = t['pos2'] - params['spacer'] - params['pcrLen']
+                if t['type'] == "INV_3to3":
+                    ls = max(t['pos1'] + params['spacer'], ls)
                 le = max(ls + 1, t['pos2'] - params['spacer'])
                 seq2 = revcpl(localRef(genome, t['chr2'], ls, le))
-            elif (t['type'] == "INV_5to5"):
+            elif (t['type'] == "INV_5to5") or (t['type'] == "BND_5to5"):
                 ls = t['pos1'] + params['spacer']
-                le = min(t['pos2'] - params['spacer'], t['pos1'] + params['spacer'] + params['pcrLen'])
+                le = t['pos1'] + params['spacer'] + params['pcrLen']
+                if t['type'] == "INV_5to5":
+                    le = max(ls + 1, min(t['pos2'] - params['spacer'], le))
                 seq1 = revcpl(localRef(genome, t['chr1'], ls, le))
                 ls = t['pos2'] + params['spacer']
                 le = t['pos2'] + params['spacer'] + params['pcrLen']
                 seq2 = localRef(genome, t['chr2'], ls, le)
-            elif t['type'].startswith("DUP"):
+            elif (t['type'].startswith("DUP")) or (t['type'] == "BND_5to3"):
                 ls = t['pos1'] + params['spacer']
-                le = max(ls + 1, min(t['pos2'] - params['spacer'], t['pos1'] + params['spacer'] + params['pcrLen']))
-                seq2 = localRef(genome, t['chr1'], ls, le)
-                ls = max(t['pos1'] + params['spacer'], t['pos2'] - params['spacer'] - params['pcrLen'])
+                le = t['pos1'] + params['spacer'] + params['pcrLen']
+                if t['type'].startswith("DUP"):
+                    le = max(ls + 1, min(t['pos2'] - params['spacer'], le))
+                seq1 = revcpl(localRef(genome, t['chr1'], ls, le))
+                ls = t['pos2'] - params['spacer'] - params['pcrLen']
+                if t['type'].startswith("DUP"):
+                    ls = max(t['pos1'] + params['spacer'], ls)
                 le = max(ls + 1,  t['pos2'] - params['spacer'])
-                seq1 = localRef(genome, t['chr2'], ls, le)
+                seq2 = revcpl(localRef(genome, t['chr2'], ls, le))
+            else:
+                print("Unknown variant type:", t['type'], file=sys.stderr)
+                return([])
             primer3Input(params, seq1, seq2, idname, f)
         f.close()
 
@@ -195,36 +207,30 @@ def primerDesign(filename, genome, prefix):
                         candidate = int(fields[3])
                         t = variants[idname]
                         if lr == "LEFT":
-                            if ((t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS"))):
-                                print(d)
-                                print(t)
+                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
                                 if (d['Chrom'] == t['chr1']) and (d['Pos'] < t['pos1']) and (d['Pos'] + params['pcrLen'] > t['pos1']) and (d['Ori'] == "forward"):
                                     prleftjs[idname] = d
-                                    print("SuccessLeft")
-                            elif t['type'] == "INV_3to3":
+                            elif (t['type'] == "INV_3to3") or (t['type'] == "BND_3to3"):
                                 if (d['Chrom'] == t['chr1']) and (d['Pos'] < t['pos1']) and (d['Pos'] + params['pcrLen'] > t['pos1']) and (d['Ori'] == "forward"):
                                     prleftjs[idname] = d
-                            elif t['type'] == "INV_5to5":
+                            elif (t['type'] == "INV_5to5") or (t['type'] == "BND_5to5"):
                                 if (d['Chrom'] == t['chr1']) and (d['Pos'] > t['pos1']) and (d['Pos'] < t['pos1'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prleftjs[idname] = d
-                            elif t['type'].startswith("DUP"):
-                                if (d['Chrom'] == t['chr2']) and (d['Pos'] < t['pos2']) and (d['Pos'] + params['pcrLen'] > t['pos2']) and (d['Ori'] == "forward"):
+                            elif (t['type'].startswith("DUP")) or (t['type'] == "BND_5to3"):
+                                if (d['Chrom'] == t['chr1']) and (d['Pos'] > t['pos1']) and (d['Pos'] < t['pos1'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prleftjs[idname] = d
                         if lr == "RIGHT":
-                            if ((t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS"))):
-                                print(d)
-                                print(t)
+                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
                                 if (d['Chrom'] == t['chr2']) and (d['Pos'] > t['pos2']) and (d['Pos'] < t['pos2'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prrightjs[idname] = d
-                                    print("SuccessRight")
-                            elif t['type'] == "INV_3to3":
+                            elif (t['type'] == "INV_3to3") or (t['type'] == "BND_3to3"):
                                 if (d['Chrom'] == t['chr2']) and (d['Pos'] < t['pos2']) and (d['Pos'] + params['pcrLen'] > t['pos2']) and (d['Ori'] == "forward"):
                                     prrightjs[idname] = d
-                            elif t['type'] == "INV_5to5":
+                            elif (t['type'] == "INV_5to5") or (t['type'] == "BND_5to5"):
                                 if (d['Chrom'] == t['chr1']) and (d['Pos'] > t['pos2']) and (d['Pos'] < t['pos2'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prrightjs[idname] = d
-                            elif t['type'].startswith("DUP"):
-                                if (d['Chrom'] == t['chr1']) and (d['Pos'] > t['pos1']) and (d['Pos'] < t['pos1'] + params['pcrLen']) and (d['Ori'] == "reverse"):
+                            elif (t['type'].startswith("DUP")) or (t['type'] == "BND_5to3"):
+                                if (d['Chrom'] == t['chr2']) and (d['Pos'] < t['pos2']) and (d['Pos'] + params['pcrLen'] > t['pos2']) and (d['Ori'] == "forward"):
                                     prrightjs[idname] = d
 
         ampcount = collections.Counter()
@@ -254,7 +260,7 @@ def primerDesign(filename, genome, prefix):
                             vartodo[idname] = False
                         else:
                             # For small variants we may have one amplicon overlapping the variant
-                            if ((t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS"))):
+                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("INS")):
                                 if ampcount[amp] == 1:
                                     if (ampjs[idname]['Chrom'] == t['chr1']) and (ampjs[idname]['ForPos'] < t['pos1']) and (ampjs[idname]['RevPos'] > t['pos2']):
                                         vartodo[idname] = False
