@@ -53,8 +53,49 @@ function run() {
 
 function displayResults() {
     var results = JSON.parse(this.responseText)
-    console.log(results)
-    resultTab.innerHTML = '<p class="text-danger">Return Json: ' + JSON.stringify(results) + '</p>'
+    //console.log(results)
+    //resultTab.innerHTML = '<p class="text-danger">Return Json: ' + JSON.stringify(results) + '</p>'
+    var str = '<table class="table">'
+    str += '<thead><tr>'
+    str += '<th scope="col">chr1</th>'
+    str += '<th scope="col">pos1</th>'
+    str += '<th scope="col">chr2</th>'
+    str += '<th scope="col">pos2</th>'
+    str += '<th scope="col">type</th>'
+    str += '<th scope="col">Primer1Seq</th>'
+    str += '<th scope="col">Primer1Chrom</th>'
+    str += '<th scope="col">Primer1Pos</th>'
+    str += '<th scope="col">Primer1Ori</th>'
+    str += '<th scope="col">Primer1Tm</th>'
+    str += '<th scope="col">Primer2Seq</th>'
+    str += '<th scope="col">Primer2Chrom</th>'
+    str += '<th scope="col">Primer2Pos</th>'
+    str += '<th scope="col">Primer2Ori</th>'
+    str += '<th scope="col">Primer2Tm</th>'
+    str += '</tr></thead>'
+    str += '<tbody>'
+    for (var i = 0; i < results.length; ++i) {
+	str += '<tr>'
+	str += '<td>' + results[i]['chr1'] + '</td>'
+	str += '<td>' + results[i]['pos1'] + '</td>'
+	str += '<td>' + results[i]['chr2'] + '</td>'
+	str += '<td>' + results[i]['pos2'] + '</td>'
+	str += '<td>' + results[i]['type'] + '</td>'
+	str += '<td>' + results[i]['Primer1Seq'] + '</td>'
+	str += '<td>' + results[i]['Primer1Chrom'] + '</td>'
+	str += '<td>' + results[i]['Primer1Pos'] + '</td>'
+	str += '<td>' + results[i]['Primer1Ori'] + '</td>'
+	str += '<td>' + results[i]['Primer1Tm'] + '</td>'
+	str += '<td>' + results[i]['Primer2Seq'] + '</td>'
+	str += '<td>' + results[i]['Primer2Chrom'] + '</td>'
+	str += '<td>' + results[i]['Primer2Pos'] + '</td>'
+	str += '<td>' + results[i]['Primer2Ori'] + '</td>'
+	str += '<td>' + results[i]['Primer2Tm'] + '</td>'	
+	str += '</tr>'
+    }
+    str += '</tbody>'
+    str += '</table>'
+    resultTab.innerHTML = str
 }
 
 function loadExample() {
