@@ -30,7 +30,7 @@ function run() {
     var variants = varsInput.value.split('\n').filter(function (line) { return line !== ""; })
     var arr = []
     for (var i =0; i < variants.length; ++i) {
-	fields = variants[i].split(',')
+	fields = variants[i].split(/\s*,\s*/)
 	var jsdict = { "chr1": fields[0], "pos1": parseInt(fields[1]), "chr2": fields[2], "pos2": parseInt(fields[3]), "type": fields[4] }
 	arr.push(jsdict)
     }
