@@ -1,5 +1,3 @@
-/* global c3 */
-
 $('#mainTab a').on('click', function (e) {
     e.preventDefault()
     $(this).tab('show')
@@ -7,6 +5,8 @@ $('#mainTab a').on('click', function (e) {
 
 var resultLink = document.getElementById('link-results')
 var resultTab = document.getElementById('result-tab')
+var resultContainer = document.getElementById('result')
+var runAlert = document.getElementById('run-alert')
 
 var submitButton = document.getElementById('btn-submit')
 submitButton.addEventListener('click', function () {
@@ -21,19 +21,24 @@ exampleButton.addEventListener('click', function () {
 
 var varsInput = document.getElementById('variants')
 
-var spinnerHtml = '<i class="fas fa-spinner fa-2x spinner"></i>'
-
 function run() {
-    resultTab.innerHTML = spinnerHtml
-
+    resultContainer.innerHTML = ''
     // Parse variants as json
     var variants = varsInput.value.split('\n').filter(function (line) { return line !== ""; })
+
+    // FIXME: proper error handling
+    if (variants.length === 0) {
+        return
+    }
+
     var arr = []
     for (var i =0; i < variants.length; ++i) {
 	fields = variants[i].split(/\s*,\s*/)
 	var jsdict = { "chr1": fields[0], "pos1": parseInt(fields[1]), "chr2": fields[2], "pos2": parseInt(fields[3]), "type": fields[4] }
 	arr.push(jsdict)
     }
+
+    runAlert.classList.remove('d-none')
 
     // Send json post request
     var req = new XMLHttpRequest()
@@ -55,7 +60,8 @@ function displayResults() {
     var results = JSON.parse(this.responseText)
     //console.log(results)
     //resultTab.innerHTML = '<p class="text-danger">Return Json: ' + JSON.stringify(results) + '</p>'
-    var str = '<table class="table">'
+    var str = '<div class="table-responsive">'
+    str += '<table class="table table-striped">'
     str += '<thead><tr>'
     str += '<th scope="col">chr1</th>'
     str += '<th scope="col">pos1</th>'
@@ -95,7 +101,9 @@ function displayResults() {
     }
     str += '</tbody>'
     str += '</table>'
-    resultTab.innerHTML = str
+    str += '</div>'
+    resultContainer.innerHTML = str
+    runAlert.classList.add('d-none')
 }
 
 function loadExample() {

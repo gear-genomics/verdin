@@ -7,7 +7,6 @@
   <title>verdin: variant primer design | GEAR</title>
   <meta name="description" content="Variant primer design.">
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/c3/0.4.11/c3.min.css">
   <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.6/css/all.css">
   <link rel="stylesheet" href="static/css/gear.css">
   <link rel="stylesheet" href="static/css/verdin.css">
@@ -19,7 +18,6 @@
     <div class="container">
       <h1 class="display-4 app-name">verdin</h1>
       <p class="lead">Variant Primer Design</p>
-      <p>Please be patient analysis takes a couple of seconds to run</p>
         <!--<a class="plain" href="" target="_blank">
           <i class="fas fa-book"></i> Docs
         </a>
@@ -34,7 +32,7 @@
     </div>
   </header>
 
-  <section class="main container">
+  <main class="container">
     <ul class="nav nav-fill mb-4" id="mainTab">
       <li class="nav-item">
         <a class="nav-link active" href="#input-tab">Input</a>
@@ -45,20 +43,33 @@
     </ul>
     <div class="tab-content" id="main-tabs">
       <div class="tab-pane fade show active" id="input-tab">
-        Enter variants as chr,pos,chr2,pos2,type:
-        <textarea id="variants" spellcheck="false"></textarea>
+        <div class="alert alert-light" role="alert">
+          <i class="fas fa-exclamation-circle"></i>
+          Enter variants as comma-separated values in the following format:
+          <br>
+          <code>chromosome1,position1,chromosome2,position2,variantType</code>
+          <br>
+          (click the <code>Load Example</code> button to view an example)
+        </div>
+        <textarea id="variants" class="form-control" spellcheck="false"></textarea>
         <button type="submit" class="btn btn-outline-primary" id="btn-submit">
           <i class="fas fa-rocket" style="margin-right: 5px;"></i>
           Launch Analysis
         </button>
         <button type="submit" class="btn btn-outline-primary" id="btn-example">
           <i class="fas fa-eye" style="margin-right: 5px;"></i>
-          Show Example
+          Load Example
         </button>
       </div>
-      <div class="tab-pane fade" id="result-tab"></div>
+      <div class="tab-pane fade" id="result-tab">
+        <div id="run-alert" class="alert alert-info d-none" role="alert">
+          <i class="fas fa-spinner spinner"></i>
+          Analysis takes a couple of seconds, please be patient.
+        </div>
+        <div id="result"></div>
+      </div>
     </div>
-  </section>
+  </main>
 
   <footer>
     <div class="container">
@@ -93,9 +104,6 @@
   <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/c3/0.4.11/c3.min.js"></script>
 
   <script src="static/js/verdin.js"></script>
 
