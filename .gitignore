@@ -1,6 +1,8 @@
+server/run.sh
 fm/
 data/
 *.pyc
+*.*~
 
 # Prerequisites
 *.d
