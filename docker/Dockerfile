@@ -1,8 +1,9 @@
 # use the ubuntu base image
 FROM ubuntu:18.04
 
+
 # install required packages
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y  \
     ant \
     asciidoc \
     build-essential \
