@@ -8,7 +8,7 @@ import subprocess
 import argparse
 import json
 import numpy
-
+import os
 
 
 def revcpl(seq):
@@ -36,22 +36,87 @@ def primer3Input(params, seq1, seq2, idcounter, f):
     print("PRIMER_MAX_SIZE=", params['PRIMER_MAX_SIZE'], sep='', file=f)
     print("=", file=f)
 
-def primer3(primer3In, primer3Out):
-    subprocess.call(['primer3_core', '--output=' + primer3Out, primer3In])
+def variantsToPrimer3(params, vrs):
+    with open(params['fnPrimer3In'], 'w') as f:
+        for idname in vrs.keys():
+            t = vrs[idname]
+            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
+                ls = max(0, t['pos1'] - params['spacer'] - params['pcrLen'])
+                le = max(ls + 1, t['pos1'] - params['spacer'])
+                seq1 = localRef(params['genome'], t['chr1'], ls, le)
+                ls = t['pos2'] + params['spacer']
+                le = t['pos2'] + params['spacer'] + params['pcrLen']
+                seq2 = localRef(params['genome'], t['chr2'], ls, le)
+            elif (t['type'] == "INV_3to3") or (t['type'] == "BND_3to3"):
+                ls = max(0, t['pos1'] - params['spacer'] - params['pcrLen'])
+                le = max(ls + 1, t['pos1'] - params['spacer'])
+                seq1 = localRef(params['genome'], t['chr1'], ls, le)
+                ls = t['pos2'] - params['spacer'] - params['pcrLen']
+                if t['type'] == "INV_3to3":
+                    ls = max(t['pos1'] + params['spacer'], ls)
+                le = max(ls + 1, t['pos2'] - params['spacer'])
+                seq2 = revcpl(localRef(params['genome'], t['chr2'], ls, le))
+            elif (t['type'] == "INV_5to5") or (t['type'] == "BND_5to5"):
+                ls = t['pos1'] + params['spacer']
+                le = t['pos1'] + params['spacer'] + params['pcrLen']
+                if t['type'] == "INV_5to5":
+                    le = max(ls + 1, min(t['pos2'] - params['spacer'], le))
+                seq1 = revcpl(localRef(params['genome'], t['chr1'], ls, le))
+                ls = t['pos2'] + params['spacer']
+                le = t['pos2'] + params['spacer'] + params['pcrLen']
+                seq2 = localRef(params['genome'], t['chr2'], ls, le)
+            elif (t['type'].startswith("DUP")) or (t['type'] == "BND_5to3"):
+                ls = t['pos1'] + params['spacer']
+                le = t['pos1'] + params['spacer'] + params['pcrLen']
+                if t['type'].startswith("DUP"):
+                    le = max(ls + 1, min(t['pos2'] - params['spacer'], le))
+                seq1 = revcpl(localRef(params['genome'], t['chr1'], ls, le))
+                ls = t['pos2'] - params['spacer'] - params['pcrLen']
+                if t['type'].startswith("DUP"):
+                    ls = max(t['pos1'] + params['spacer'], ls)
+                le = max(ls + 1, t['pos2'] - params['spacer'])
+                seq2 = revcpl(localRef(params['genome'], t['chr2'], ls, le))
+            else:
+                print("Unknown variant type:", t['type'], file=sys.stderr)
+                quit()
+            primer3Input(params, seq1, seq2, idname, f)
+        f.close()
 
-def silicaStrict(genome, silicaIn, silicaOut1, silicaOut2):
-    subprocess.call(['silica', '-q', '-m', '5', '-d', '0', '-f', 'json', '-p', silicaOut1, '-o', silicaOut2, '-g', genome, silicaIn])
+    
+def primer3(prs, vrs):
+    variantsToPrimer3(prs, vrs)
+    subprocess.call(['primer3_core', '--output=' + prs['fnPrimer3Out'], prs['fnPrimer3In']])
+    os.remove(prs['fnPrimer3In'])
 
-def silica(genome, silicaIn, silicaOut1, silicaOut2):
-    subprocess.call(['silica', '-f', 'json', '-c', '50', '-p', silicaOut1, '-o', silicaOut2, '-g', genome, silicaIn])
+def primer3ToSilica(params):
+    with open(params['fnSilicaIn'], 'w') as f:
+        with open(params['fnPrimer3Out'], 'rb') as keyvalf:
+            seqreader = csv.reader(keyvalf, delimiter='=')
+            seqid = "NA"
+            for row in seqreader:
+                if row[0] == 'SEQUENCE_ID':
+                    seqid = row[1]
+                if row[0].endswith("_SEQUENCE"):
+                    print(">" + seqid + "_" + row[0], file=f)
+                    print(row[1], file=f)
+    os.remove(params['fnPrimer3Out'])
+    
+def silicaStrict(params):
+    primer3ToSilica(params)
+    subprocess.call(['silica', '-q', '-m', '5', '-d', '0', '-f', 'json', '-p', params['fnSilicaOut1'], '-o', params['fnSilicaOut2'], '-g', params['genome'], params['fnSilicaIn']])
+
+
+def silica(params):
+    subprocess.call(['silica', '-f', 'json', '-c', '50', '-p', params['fnSilicaOut1'], '-o', params['fnSilicaOut2'], '-g', params['genome'], params['fnSilicaIn']])
 
 def localRef(genome, chrom, start, end):
     output = subprocess.check_output(['samtools', 'faidx', genome, '{}:{}-{}'.format(chrom, start, end)])
     return ''.join(output.split('\n')[1:]).upper()
+    
 
 def primerDesign(filename, genome, prefix):
     # Parameters
-    params = {'pcrLen': 500, 'spacer': 50, 'nprimer': 100, 'PRIMER_MAX_TM': 65, 'PRIMER_MIN_TM': 56, 'PRIMER_OPT_TM': 62, 'PRIMER_OPT_SIZE': 22, 'PRIMER_MIN_SIZE': 20, 'PRIMER_MAX_SIZE': 24}
+    params = {'fnPrimer3In': prefix + ".primer3.input", 'fnPrimer3Out': prefix + ".primer3.output", 'fnSilicaIn': prefix + ".silica.input", 'fnSilicaOut1': prefix + ".silica.primer.output", 'fnSilicaOut2': prefix + ".silica.amplicon.output", 'genome': genome, 'pcrLen': 500, 'spacer': 50, 'nprimer': 100, 'PRIMER_MAX_TM': 65, 'PRIMER_MIN_TM': 56, 'PRIMER_OPT_TM': 62, 'PRIMER_OPT_SIZE': 22, 'PRIMER_MIN_SIZE': 20, 'PRIMER_MAX_SIZE': 24}
 
     # Load variants
     variants = collections.defaultdict(dict)
@@ -62,78 +127,17 @@ def primerDesign(filename, genome, prefix):
             if not row['chr1'].startswith("#"):
                 variants[idcounter] = {'chr1': row['chr1'], 'pos1': int(row['pos1']), 'chr2': row['chr2'], 'pos2': int(row['pos2']), 'type': row['type']}
                 idcounter += 1
-
-    # Generate Primer3 input
-    primer3In = prefix + ".primer3.input"
-    with open(primer3In, 'w') as f:
-        for idname in variants.keys():
-            t = variants[idname]
-            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
-                ls = max(0, t['pos1'] - params['spacer'] - params['pcrLen'])
-                le = max(ls + 1, t['pos1'] - params['spacer'])
-                seq1 = localRef(genome, t['chr1'], ls, le)
-                ls = t['pos2'] + params['spacer']
-                le = t['pos2'] + params['spacer'] + params['pcrLen']
-                seq2 = localRef(genome, t['chr2'], ls, le)
-            elif (t['type'] == "INV_3to3") or (t['type'] == "BND_3to3"):
-                ls = max(0, t['pos1'] - params['spacer'] - params['pcrLen'])
-                le = max(ls + 1, t['pos1'] - params['spacer'])
-                seq1 = localRef(genome, t['chr1'], ls, le)
-                ls = t['pos2'] - params['spacer'] - params['pcrLen']
-                if t['type'] == "INV_3to3":
-                    ls = max(t['pos1'] + params['spacer'], ls)
-                le = max(ls + 1, t['pos2'] - params['spacer'])
-                seq2 = revcpl(localRef(genome, t['chr2'], ls, le))
-            elif (t['type'] == "INV_5to5") or (t['type'] == "BND_5to5"):
-                ls = t['pos1'] + params['spacer']
-                le = t['pos1'] + params['spacer'] + params['pcrLen']
-                if t['type'] == "INV_5to5":
-                    le = max(ls + 1, min(t['pos2'] - params['spacer'], le))
-                seq1 = revcpl(localRef(genome, t['chr1'], ls, le))
-                ls = t['pos2'] + params['spacer']
-                le = t['pos2'] + params['spacer'] + params['pcrLen']
-                seq2 = localRef(genome, t['chr2'], ls, le)
-            elif (t['type'].startswith("DUP")) or (t['type'] == "BND_5to3"):
-                ls = t['pos1'] + params['spacer']
-                le = t['pos1'] + params['spacer'] + params['pcrLen']
-                if t['type'].startswith("DUP"):
-                    le = max(ls + 1, min(t['pos2'] - params['spacer'], le))
-                seq1 = revcpl(localRef(genome, t['chr1'], ls, le))
-                ls = t['pos2'] - params['spacer'] - params['pcrLen']
-                if t['type'].startswith("DUP"):
-                    ls = max(t['pos1'] + params['spacer'], ls)
-                le = max(ls + 1, t['pos2'] - params['spacer'])
-                seq2 = revcpl(localRef(genome, t['chr2'], ls, le))
-            else:
-                print("Unknown variant type:", t['type'], file=sys.stderr)
-                return []
-            primer3Input(params, seq1, seq2, idname, f)
-        f.close()
-
+                
     # Generate primer candidates
-    primer3Out = prefix + ".primer3.output"
-    primer3(primer3In, primer3Out)
+    primer3(params, variants)
 
     # Silica strict primer pruning
-    silicaIn = prefix + ".silica.input"
-    with open(silicaIn, 'w') as f:
-        with open(primer3Out, 'rb') as keyvalf:
-            seqreader = csv.reader(keyvalf, delimiter='=')
-            seqid = "NA"
-            for row in seqreader:
-                if row[0] == 'SEQUENCE_ID':
-                    seqid = row[1]
-                if row[0].endswith("_SEQUENCE"):
-                    print(">" + seqid + "_" + row[0], file=f)
-                    print(row[1], file=f)
-    silicaOut1 = prefix + ".silica.primer.output"
-    silicaOut2 = prefix + ".silica.amplicon.output"
-    silicaStrict(genome, silicaIn, silicaOut1, silicaOut2)
+    silicaStrict(params)
 
     # Primer count table
     pritable = numpy.full((idcounter * params['nprimer'], 2), 0)
     priseq = dict()
-    with open(silicaOut1) as prijson:
+    with open(params['fnSilicaOut1']) as prijson:
         for line in prijson:
             if line.startswith('{'):
                 line = line.strip().rstrip(',')
@@ -143,12 +147,14 @@ def primerDesign(filename, genome, prefix):
                 lr = fields[2]
                 candidate = int(fields[3])
                 if lr == "LEFT":
+                    if pritable[idname * params['nprimer'] + candidate, 0] == 0:
+                        priseq[(idname * params['nprimer'] + candidate, 0)] = d["Seq"]
                     pritable[idname * params['nprimer'] + candidate, 0] += 1
-                    priseq[(idname * params['nprimer'] + candidate, 0)] = d["Seq"]
                 elif lr == "RIGHT":
+                    if pritable[idname * params['nprimer'] + candidate, 1] == 0:
+                        priseq[(idname * params['nprimer'] + candidate, 1)] = d["Seq"]
                     pritable[idname * params['nprimer'] + candidate, 1] += 1
-                    priseq[(idname * params['nprimer'] + candidate, 1)] = d["Seq"]
-
+                    
     # Iterate all primers
     scorelst = []
     for i in range(idcounter):
@@ -165,10 +171,8 @@ def primerDesign(filename, genome, prefix):
     while sum(vartodo):
         print("Primer selection for", sum(vartodo), "variants")
         varincl = numpy.full(idcounter, False)
-        with open(silicaIn, 'w') as f:
+        with open(params['fnSilicaIn'], 'w') as f:
             for (score, idname, candidate) in scorelst:
-                if sum(varincl) == sum(vartodo):
-                    break
                 if used[idname * params['nprimer'] + candidate]:
                     continue
                 if (vartodo[idname]) and (not varincl[idname]):
@@ -178,6 +182,9 @@ def primerDesign(filename, genome, prefix):
                     print(">" + str(idname) + "_PRIMER_RIGHT_" + str(candidate) + "_SEQUENCE", file=f)
                     print(priseq[(idname * params['nprimer'] + candidate, 1)], file=f)
                     used[idname * params['nprimer'] + candidate] = True
+                    if sum(varincl) == sum(vartodo):
+                        break
+
         if not sum(varincl):
             print("Leftover variants no primers were found", sum(vartodo))
             for idname in range(idcounter):
@@ -186,23 +193,51 @@ def primerDesign(filename, genome, prefix):
             return primerlst
 
         # Run Silica
-        silica(genome, silicaIn, silicaOut1, silicaOut2)
+        silica(params)
 
+        # Safely discard all primer pairs with >1 amplicon
+        ampct = numpy.full(idcounter * params['nprimer'], 0)
+        ampsmall = numpy.full(idcounter * params['nprimer'], 0)
+        with open(params['fnSilicaOut2']) as ampjson:
+            for line in ampjson:
+                if line.startswith('{'):
+                    line = line.strip().rstrip(',')
+                    d = json.loads(line)
+                    forname = d['ForName'].replace("_LEFT_", "_")
+                    revname = d['RevName'].replace("_RIGHT_", "_")
+                    if forname == revname:
+                        fields = forname.split('_')
+                        idname = int(fields[0])
+                        candidate = int(fields[2])
+                        # For small variants we may have one amplicon overlapping the variant
+                        t = variants[idname]
+                        if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")):
+                            if (d['Chrom'] == t['chr1']) and (d['ForPos'] < t['pos1']) and (d['RevPos'] > t['pos2']):
+                                ampsmall[idname * params['nprimer'] + candidate] += 1
+                                # Multiple amplicons over a small variant or only one (accepted)
+                                if ampsmall[idname * params['nprimer'] + candidate] == 1:
+                                    continue
+                        ampct[idname * params['nprimer'] + candidate] += 1
+        
         # Get primer and amplicon counts
         pricount = collections.Counter()
         prleftjs = dict()
         prrightjs = dict()
-        with open(silicaOut1) as prijson:
+        with open(params['fnSilicaOut1']) as prijson:
             for line in prijson:
                 if line.startswith('{'):
                     line = line.strip().rstrip(',')
                     d = json.loads(line)
-                    if (int(d['Tm']) >= params['PRIMER_MIN_TM']) and (int(d['Tm']) <= params['PRIMER_MAX_TM']):
-                        pricount[d['Name']] += 1
-                        fields = d["Name"].split('_')
-                        idname = int(fields[0])
-                        lr = fields[2]
-                        candidate = int(fields[3])
+                    if int(d['Tm']) < params['PRIMER_MIN_TM']:
+                        continue
+                    if int(d['Tm']) > params['PRIMER_MAX_TM']:
+                        continue
+                    pricount[d['Name']] += 1
+                    fields = d["Name"].split('_')
+                    idname = int(fields[0])
+                    lr = fields[2]
+                    candidate = int(fields[3])
+                    if ampct[idname * params['nprimer'] + candidate] == 0:
                         t = variants[idname]
                         if lr == "LEFT":
                             if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
@@ -231,38 +266,18 @@ def primerDesign(filename, genome, prefix):
                                 if (d['Chrom'] == t['chr2']) and (d['Pos'] < t['pos2']) and (d['Pos'] + params['pcrLen'] > t['pos2']) and (d['Ori'] == "forward"):
                                     prrightjs[idname] = d
 
-        ampcount = collections.Counter()
-        ampjs = dict()
-        with open(silicaOut2) as ampjson:
-            for line in ampjson:
-                if line.startswith('{'):
-                    line = line.strip().rstrip(',')
-                    d = json.loads(line)
-                    forname = d['ForName'].replace("_LEFT_", "_")
-                    revname = d['RevName'].replace("_RIGHT_", "_")
-                    if forname == revname:
-                        ampcount[forname] += 1
-                        idname = int(forname.split('_')[0])
-                        ampjs[idname] = d
-
         # Check primers
         for pleft in pricount.keys():
             if "_LEFT_" in pleft:
                 pright = pleft.replace("_LEFT_", "_RIGHT_")
                 amp = pleft.replace("_LEFT_", "_")
-                idname = int(pleft.split('_')[0])
+                fields = amp.split('_')
+                idname = int(fields[0])
+                candidate = int(fields[2])
                 if idname in prleftjs:
                     if idname in prrightjs:
-                        t = variants[idname]
-                        if ampcount[amp] == 0:
+                        if ampct[idname * params['nprimer'] + candidate] == 0:
                             vartodo[idname] = False
-                        else:
-                            # For small variants we may have one amplicon overlapping the variant
-                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")):
-                                if ampcount[amp] == 1:
-                                    if (ampjs[idname]['Chrom'] == t['chr1']) and (ampjs[idname]['ForPos'] < t['pos1']) and (ampjs[idname]['RevPos'] > t['pos2']):
-                                        vartodo[idname] = False
-
                 if not vartodo[idname]:
                     out = t
                     out['Primer1Chrom'] = prleftjs[idname]['Chrom']
