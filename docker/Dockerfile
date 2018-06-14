@@ -72,7 +72,7 @@ RUN pip install -r /opt/verdin/docker/requirements.txt
 # C. elegans for testing: ftp://ftp.ensembl.org/pub/release-92/fasta/caenorhabditis_elegans/dna/Caenorhabditis_elegans.WBcel235.dna.toplevel.fa.gz
 # download and index reference genome
 RUN cd /opt/silica/fm \
-    && wget -O Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz ftp://ftp.ensembl.org/pub/release-75/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.75.dna.primary_assembly.fa.gz \
+    && wget -O Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz ftp://ftp.ensembl.org/pub/release-92/fasta/caenorhabditis_elegans/dna/Caenorhabditis_elegans.WBcel235.dna.toplevel.fa.gz \
     && gunzip Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz \
     && bgzip Homo_sapiens.GRCh37.dna.primary_assembly.fa \
     && samtools faidx Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz \
