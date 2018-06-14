@@ -1,17 +1,14 @@
 # use the ubuntu base image
-FROM ubuntu:16.04
+FROM ubuntu:18.04
 
 
 # install required packages
 RUN apt-get update && apt-get install -y  \
-    ant \
-    asciidoc \
     build-essential \
     cmake \
     g++ \
     gfortran \
     git \
-    hdf5-tools \
     libboost-date-time-dev \
     libboost-program-options-dev \
     libboost-system-dev \
@@ -21,6 +18,7 @@ RUN apt-get update && apt-get install -y  \
     libhdf5-dev \
     libncurses-dev \
     liblzma-dev \
+    primer3 \
     python \
     python-dev \
     python-pip \
@@ -31,25 +29,27 @@ RUN apt-get update && apt-get install -y  \
 ENV BOOST_ROOT /usr
 ENV EBROOTHTSLIB /opt/htslib
 
-# install verdin
+# install htslib
 RUN cd /opt \
     && git clone https://github.com/samtools/htslib.git \
     && cd /opt/htslib \
     && make \
     && make lib-static \
     && make install
+
+# install silica
 RUN cd /opt \
-    && git clone https://github.com/samtools/bcftools.git \
-    && cd /opt/bcftools \
-    && git checkout tags/1.4 \
-    && make \
-    && make docs \
-    && make install
-RUN cd /opt \
-    && git clone https://github.com/samtools/samtools.git \
-    && cd /opt/samtools \
+    && git clone --recursive https://github.com/gear-genomics/silica.git \
+    && cd /opt/silica \
     && make \
     && make install
+
+# install verdin
+RUN cd /opt \
+    && git clone --recursive https://github.com/gear-genomics/verdin.git
+
+# install python packages
+RUN pip install -r /opt/verdin/docker/requirements.txt
 
 # by default /bin/bash is executed
 CMD ["/bin/bash"]
