@@ -44,6 +44,13 @@ RUN cd /opt \
     && make \
     && make install
 
+# install tracy
+RUN cd /opt \
+    && git clone --recursive https://github.com/gear-genomics/tracy.git \
+    && cd /opt/tracy \
+    && make \
+    && make install
+
 # install silica
 RUN cd /opt \
     && git clone --recursive https://github.com/gear-genomics/silica.git \
@@ -52,7 +59,7 @@ RUN cd /opt \
     && make install
 
 # include silica in path
-ENV PATH="/opt/silica/bin:/opt/htslib:/opt/samtools:${PATH}"
+ENV PATH="/opt/tracy/bin:/opt/silica/bin:/opt/htslib:/opt/samtools:${PATH}"
 
 # install verdin
 RUN cd /opt \
@@ -61,16 +68,23 @@ RUN cd /opt \
 # install python packages
 RUN pip install -r /opt/verdin/docker/requirements.txt
 
+# ftp://ftp.ensembl.org/pub/release-75/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.75.dna.primary_assembly.fa.gz 
 # download and index reference genome
 RUN cd /opt/silica/fm \
-    && wget -O Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz ftp://ftp.ensembl.org/pub/release-75/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.75.dna.primary_assembly.fa.gz \
+    && wget -O Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz ftp://ftp.ensembl.org/pub/release-92/fasta/caenorhabditis_elegans/dna/Caenorhabditis_elegan\
+s.WBcel235.dna.toplevel.fa.gz \
     && gunzip Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz \
     && bgzip Homo_sapiens.GRCh37.dna.primary_assembly.fa \
-    && samtools faidx Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz
+    && samtools faidx Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz \
+    && tracy -o Homo_sapiens.GRCh37.dna.primary_assembly.fa.fm9 Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz
 
-# add user
-RUN groupadd -r -g 1000 ubuntu && useradd -r -g ubuntu -u 1000 -m ubuntu
-USER ubuntu
+# generate links
+RUN cd /opt/verdin/fm \
+    && ln -s /opt/silica/fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz \
+    && ln -s /opt/silica/fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz.fai \
+    && ln -s /opt/silica/fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz.gzi \
+    && ln -s /opt/silica/fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.fm9
 
-# by default /bin/bash is executed
-CMD ["/bin/bash"]
+WORKDIR /opt/verdin/server/
+EXPOSE 8666
+CMD ["gunicorn", "--timeout", "125", "-w", "5", "-b", "0.0.0.0:8666", "server:app"]
