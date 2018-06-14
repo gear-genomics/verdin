@@ -6,6 +6,7 @@ cython
 decorator
 flask
 flask_cors
+gunicorn
 h5py
 html5lib
 itsdangerous
