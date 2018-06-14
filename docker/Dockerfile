@@ -1,7 +1,6 @@
 # use the ubuntu base image
 FROM ubuntu:18.04
 
-
 # install required packages
 RUN apt-get update && apt-get install -y  \
     build-essential \
@@ -22,6 +21,7 @@ RUN apt-get update && apt-get install -y  \
     python \
     python-dev \
     python-pip \
+    wget \
     zlib1g-dev \
     && apt-get clean
 
@@ -37,6 +37,13 @@ RUN cd /opt \
     && make lib-static \
     && make install
 
+# install samtools
+RUN cd /opt \
+    && git clone https://github.com/samtools/samtools.git \
+    && cd /opt/samtools \
+    && make \
+    && make install
+
 # install silica
 RUN cd /opt \
     && git clone --recursive https://github.com/gear-genomics/silica.git \
@@ -44,12 +51,26 @@ RUN cd /opt \
     && make \
     && make install
 
+# include silica in path
+ENV PATH="/opt/silica/bin:/opt/htslib:/opt/samtools:${PATH}"
+
 # install verdin
 RUN cd /opt \
     && git clone --recursive https://github.com/gear-genomics/verdin.git
 
 # install python packages
 RUN pip install -r /opt/verdin/docker/requirements.txt
+
+# download and index reference genome
+RUN cd /opt/silica/fm \
+    && wget -O Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz ftp://ftp.ensembl.org/pub/release-75/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.75.dna.primary_assembly.fa.gz \
+    && gunzip Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz \
+    && bgzip Homo_sapiens.GRCh37.dna.primary_assembly.fa \
+    && samtools faidx Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz
+
+# add user
+RUN groupadd -r -g 1000 ubuntu && useradd -r -g ubuntu -u 1000 -m ubuntu
+USER ubuntu
 
 # by default /bin/bash is executed
 CMD ["/bin/bash"]
