@@ -10,7 +10,6 @@ h5py
 html5lib
 itsdangerous
 jinja2
-json
 numpy
 requests
 six
