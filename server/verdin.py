@@ -39,6 +39,8 @@ def primer3Input(params, seq1, seq2, idcounter, f):
 def variantsToPrimer3(params, vrs):
     with open(params['fnPrimer3In'], 'w') as f:
         for idname in vrs.keys():
+            if vrs[idname]['done']:
+                continue
             t = vrs[idname]
             if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
                 ls = max(0, t['pos1'] - params['spacer'] - params['pcrLen'])
@@ -103,8 +105,7 @@ def primer3ToSilica(params):
     
 def silicaStrict(params):
     primer3ToSilica(params)
-    subprocess.call(['silica', '-q', '-m', '5', '-d', '0', '-f', 'json', '-p', params['fnSilicaOut1'], '-o', params['fnSilicaOut2'], '-g', params['genome'], params['fnSilicaIn']])
-
+    subprocess.call(['silica', '-q', '-m', '5', '-d', '0', '-c', '50', '-f', 'json', '-p', params['fnSilicaOut1'], '-o', params['fnSilicaOut2'], '-g', params['genome'], params['fnSilicaIn']])
 
 def silica(params):
     subprocess.call(['silica', '-f', 'json', '-c', '50', '-p', params['fnSilicaOut1'], '-o', params['fnSilicaOut2'], '-g', params['genome'], params['fnSilicaIn']])
@@ -112,28 +113,17 @@ def silica(params):
 def localRef(genome, chrom, start, end):
     output = subprocess.check_output(['samtools', 'faidx', genome, '{}:{}-{}'.format(chrom, start, end)])
     return ''.join(output.split('\n')[1:]).upper()
+
+def primerDesignRun(params, vrs):
+    # Number of variants
+    idcounter = len(vrs.keys())
     
-
-def primerDesign(filename, genome, prefix):
-    # Parameters
-    params = {'fnPrimer3In': prefix + ".primer3.input", 'fnPrimer3Out': prefix + ".primer3.output", 'fnSilicaIn': prefix + ".silica.input", 'fnSilicaOut1': prefix + ".silica.primer.output", 'fnSilicaOut2': prefix + ".silica.amplicon.output", 'genome': genome, 'pcrLen': 500, 'spacer': 50, 'nprimer': 100, 'PRIMER_MAX_TM': 65, 'PRIMER_MIN_TM': 56, 'PRIMER_OPT_TM': 62, 'PRIMER_OPT_SIZE': 22, 'PRIMER_MIN_SIZE': 20, 'PRIMER_MAX_SIZE': 24}
-
-    # Load variants
-    variants = collections.defaultdict(dict)
-    idcounter = 0
-    with open(filename, 'rb') as csvfile:
-        prireader = csv.DictReader(csvfile, delimiter='\t')
-        for row in prireader:
-            if not row['chr1'].startswith("#"):
-                variants[idcounter] = {'chr1': row['chr1'], 'pos1': int(row['pos1']), 'chr2': row['chr2'], 'pos2': int(row['pos2']), 'type': row['type']}
-                idcounter += 1
-                
     # Generate primer candidates
-    primer3(params, variants)
+    primer3(params, vrs)
 
     # Silica strict primer pruning
     silicaStrict(params)
-
+    
     # Primer count table
     pritable = numpy.full((idcounter * params['nprimer'], 2), 0)
     priseq = dict()
@@ -154,6 +144,10 @@ def primerDesign(filename, genome, prefix):
                     if pritable[idname * params['nprimer'] + candidate, 1] == 0:
                         priseq[(idname * params['nprimer'] + candidate, 1)] = d["Seq"]
                     pritable[idname * params['nprimer'] + candidate, 1] += 1
+
+    # Clean-up
+    os.remove(params['fnSilicaIn'])
+    os.remove(params['fnSilicaOut1'])
                     
     # Iterate all primers
     scorelst = []
@@ -164,33 +158,33 @@ def primerDesign(filename, genome, prefix):
                 scorelst.append((sumhits, i, j))
 
     # Process primers in-order
-    primerlst = list()
     scorelst = sorted(scorelst)
-    vartodo = numpy.full(idcounter, True)
     used = numpy.full(idcounter * params['nprimer'], False)
-    while sum(vartodo):
-        print("Primer selection for", sum(vartodo), "variants")
+    vartodo = 0
+    for idname in range(idcounter):
+        if not vrs[idname]['done']:
+            vartodo += 1
+    while vartodo:
+        print("Primer selection for", vartodo, "variants")
         varincl = numpy.full(idcounter, False)
         with open(params['fnSilicaIn'], 'w') as f:
             for (score, idname, candidate) in scorelst:
                 if used[idname * params['nprimer'] + candidate]:
                     continue
-                if (vartodo[idname]) and (not varincl[idname]):
+                if (not vrs[idname]['done']) and (not varincl[idname]):
                     varincl[idname] = True
                     print(">" + str(idname) + "_PRIMER_LEFT_" + str(candidate) + "_SEQUENCE", file=f)
                     print(priseq[(idname * params['nprimer'] + candidate, 0)], file=f)
                     print(">" + str(idname) + "_PRIMER_RIGHT_" + str(candidate) + "_SEQUENCE", file=f)
                     print(priseq[(idname * params['nprimer'] + candidate, 1)], file=f)
                     used[idname * params['nprimer'] + candidate] = True
-                    if sum(varincl) == sum(vartodo):
+                    if sum(varincl) == vartodo:
                         break
 
+        # No more candidate primers
         if not sum(varincl):
-            print("Leftover variants no primers were found", sum(vartodo))
-            for idname in range(idcounter):
-                if vartodo[idname]:
-                    print(variants[idname])
-            return primerlst
+            os.remove(params['fnSilicaIn'])
+            return vartodo
 
         # Run Silica
         silica(params)
@@ -210,15 +204,14 @@ def primerDesign(filename, genome, prefix):
                         idname = int(fields[0])
                         candidate = int(fields[2])
                         # For small variants we may have one amplicon overlapping the variant
-                        t = variants[idname]
-                        if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")):
-                            if (d['Chrom'] == t['chr1']) and (d['ForPos'] < t['pos1']) and (d['RevPos'] > t['pos2']):
+                        if (vrs[idname]['type'].startswith("DEL")) or (vrs[idname]['type'].startswith("SNV")) or (vrs[idname]['type'].startswith("SNP")) or (vrs[idname]['type'].startswith("INS")):
+                            if (d['Chrom'] == vrs[idname]['chr1']) and (d['ForPos'] < vrs[idname]['pos1']) and (d['RevPos'] > vrs[idname]['pos2']):
                                 ampsmall[idname * params['nprimer'] + candidate] += 1
                                 # Multiple amplicons over a small variant or only one (accepted)
                                 if ampsmall[idname * params['nprimer'] + candidate] == 1:
                                     continue
                         ampct[idname * params['nprimer'] + candidate] += 1
-        
+
         # Get primer and amplicon counts
         pricount = collections.Counter()
         prleftjs = dict()
@@ -238,32 +231,31 @@ def primerDesign(filename, genome, prefix):
                     lr = fields[2]
                     candidate = int(fields[3])
                     if ampct[idname * params['nprimer'] + candidate] == 0:
-                        t = variants[idname]
                         if lr == "LEFT":
-                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
-                                if (d['Chrom'] == t['chr1']) and (d['Pos'] < t['pos1']) and (d['Pos'] + params['pcrLen'] > t['pos1']) and (d['Ori'] == "forward"):
+                            if (vrs[idname]['type'].startswith("DEL")) or (vrs[idname]['type'].startswith("SNV")) or (vrs[idname]['type'].startswith("SNP")) or (vrs[idname]['type'].startswith("INS")) or (vrs[idname]['type'] == "BND_3to5"):
+                                if (d['Chrom'] == vrs[idname]['chr1']) and (d['Pos'] < vrs[idname]['pos1']) and (d['Pos'] + params['pcrLen'] > vrs[idname]['pos1']) and (d['Ori'] == "forward"):
                                     prleftjs[idname] = d
-                            elif (t['type'] == "INV_3to3") or (t['type'] == "BND_3to3"):
-                                if (d['Chrom'] == t['chr1']) and (d['Pos'] < t['pos1']) and (d['Pos'] + params['pcrLen'] > t['pos1']) and (d['Ori'] == "forward"):
+                            elif (vrs[idname]['type'] == "INV_3to3") or (vrs[idname]['type'] == "BND_3to3"):
+                                if (d['Chrom'] == vrs[idname]['chr1']) and (d['Pos'] < vrs[idname]['pos1']) and (d['Pos'] + params['pcrLen'] > vrs[idname]['pos1']) and (d['Ori'] == "forward"):
                                     prleftjs[idname] = d
-                            elif (t['type'] == "INV_5to5") or (t['type'] == "BND_5to5"):
-                                if (d['Chrom'] == t['chr1']) and (d['Pos'] > t['pos1']) and (d['Pos'] < t['pos1'] + params['pcrLen']) and (d['Ori'] == "reverse"):
+                            elif (vrs[idname]['type'] == "INV_5to5") or (vrs[idname]['type'] == "BND_5to5"):
+                                if (d['Chrom'] == vrs[idname]['chr1']) and (d['Pos'] > vrs[idname]['pos1']) and (d['Pos'] < vrs[idname]['pos1'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prleftjs[idname] = d
-                            elif (t['type'].startswith("DUP")) or (t['type'] == "BND_5to3"):
-                                if (d['Chrom'] == t['chr1']) and (d['Pos'] > t['pos1']) and (d['Pos'] < t['pos1'] + params['pcrLen']) and (d['Ori'] == "reverse"):
+                            elif (vrs[idname]['type'].startswith("DUP")) or (vrs[idname]['type'] == "BND_5to3"):
+                                if (d['Chrom'] == vrs[idname]['chr1']) and (d['Pos'] > vrs[idname]['pos1']) and (d['Pos'] < vrs[idname]['pos1'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prleftjs[idname] = d
                         if lr == "RIGHT":
-                            if (t['type'].startswith("DEL")) or (t['type'].startswith("SNV")) or (t['type'].startswith("SNP")) or (t['type'].startswith("INS")) or (t['type'] == "BND_3to5"):
-                                if (d['Chrom'] == t['chr2']) and (d['Pos'] > t['pos2']) and (d['Pos'] < t['pos2'] + params['pcrLen']) and (d['Ori'] == "reverse"):
+                            if (vrs[idname]['type'].startswith("DEL")) or (vrs[idname]['type'].startswith("SNV")) or (vrs[idname]['type'].startswith("SNP")) or (vrs[idname]['type'].startswith("INS")) or (vrs[idname]['type'] == "BND_3to5"):
+                                if (d['Chrom'] == vrs[idname]['chr2']) and (d['Pos'] > vrs[idname]['pos2']) and (d['Pos'] < vrs[idname]['pos2'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prrightjs[idname] = d
-                            elif (t['type'] == "INV_3to3") or (t['type'] == "BND_3to3"):
-                                if (d['Chrom'] == t['chr2']) and (d['Pos'] < t['pos2']) and (d['Pos'] + params['pcrLen'] > t['pos2']) and (d['Ori'] == "forward"):
+                            elif (vrs[idname]['type'] == "INV_3to3") or (vrs[idname]['type'] == "BND_3to3"):
+                                if (d['Chrom'] == vrs[idname]['chr2']) and (d['Pos'] < vrs[idname]['pos2']) and (d['Pos'] + params['pcrLen'] > vrs[idname]['pos2']) and (d['Ori'] == "forward"):
                                     prrightjs[idname] = d
-                            elif (t['type'] == "INV_5to5") or (t['type'] == "BND_5to5"):
-                                if (d['Chrom'] == t['chr2']) and (d['Pos'] > t['pos2']) and (d['Pos'] < t['pos2'] + params['pcrLen']) and (d['Ori'] == "reverse"):
+                            elif (vrs[idname]['type'] == "INV_5to5") or (vrs[idname]['type'] == "BND_5to5"):
+                                if (d['Chrom'] == vrs[idname]['chr2']) and (d['Pos'] > vrs[idname]['pos2']) and (d['Pos'] < vrs[idname]['pos2'] + params['pcrLen']) and (d['Ori'] == "reverse"):
                                     prrightjs[idname] = d
-                            elif (t['type'].startswith("DUP")) or (t['type'] == "BND_5to3"):
-                                if (d['Chrom'] == t['chr2']) and (d['Pos'] < t['pos2']) and (d['Pos'] + params['pcrLen'] > t['pos2']) and (d['Ori'] == "forward"):
+                            elif (vrs[idname]['type'].startswith("DUP")) or (vrs[idname]['type'] == "BND_5to3"):
+                                if (d['Chrom'] == vrs[idname]['chr2']) and (d['Pos'] < vrs[idname]['pos2']) and (d['Pos'] + params['pcrLen'] > vrs[idname]['pos2']) and (d['Ori'] == "forward"):
                                     prrightjs[idname] = d
 
         # Check primers
@@ -277,24 +269,83 @@ def primerDesign(filename, genome, prefix):
                 if idname in prleftjs:
                     if idname in prrightjs:
                         if ampct[idname * params['nprimer'] + candidate] == 0:
-                            vartodo[idname] = False
-                if not vartodo[idname]:
-                    out = t
-                    out['Primer1Chrom'] = prleftjs[idname]['Chrom']
-                    out['Primer1Pos'] = prleftjs[idname]['Pos']
-                    out['Primer1Seq'] = prleftjs[idname]['Seq']
-                    out['Primer1Tm'] = prleftjs[idname]['Tm']
-                    out['Primer1Ori'] = prleftjs[idname]['Ori']
-                    out['Primer1Hits'] = pricount[pleft]
-                    out['Primer2Chrom'] = prrightjs[idname]['Chrom']
-                    out['Primer2Pos'] = prrightjs[idname]['Pos']
-                    out['Primer2Seq'] = prrightjs[idname]['Seq']
-                    out['Primer2Tm'] = prrightjs[idname]['Tm']
-                    out['Primer2Ori'] = prrightjs[idname]['Ori']
-                    out['Primer2Hits'] = pricount[pright]
-                    primerlst.append(out)
-    return primerlst
+                            #print(prleftjs[idname]['Name'], prrightjs[idname]['Name'])
+                            vrs[idname]['Primer1Chrom'] = prleftjs[idname]['Chrom']
+                            vrs[idname]['Primer1Pos'] = prleftjs[idname]['Pos']
+                            vrs[idname]['Primer1Seq'] = prleftjs[idname]['Seq']
+                            vrs[idname]['Primer1Tm'] = prleftjs[idname]['Tm']
+                            vrs[idname]['Primer1Ori'] = prleftjs[idname]['Ori']
+                            vrs[idname]['Primer1Hits'] = pricount[pleft]
+                            vrs[idname]['Primer2Chrom'] = prrightjs[idname]['Chrom']
+                            vrs[idname]['Primer2Pos'] = prrightjs[idname]['Pos']
+                            vrs[idname]['Primer2Seq'] = prrightjs[idname]['Seq']
+                            vrs[idname]['Primer2Tm'] = prrightjs[idname]['Tm']
+                            vrs[idname]['Primer2Ori'] = prrightjs[idname]['Ori']
+                            vrs[idname]['Primer2Hits'] = pricount[pright]
+                            vrs[idname]['done'] = True
 
+        # Update ToDo
+        vartodo = 0
+        for idname in range(idcounter):
+            if not vrs[idname]['done']:
+                vartodo += 1
+
+        # Clean-up
+        os.remove(params['fnSilicaIn'])
+        os.remove(params['fnSilicaOut1'])
+        os.remove(params['fnSilicaOut2'])
+    return vartodo
+
+
+
+def primerDesign(filename, genome, prefix):
+    # Parameters
+    params = {'fnPrimer3In': prefix + ".primer3.input", 'fnPrimer3Out': prefix + ".primer3.output", 'fnSilicaIn': prefix + ".silica.input", 'fnSilicaOut1': prefix + ".silica.primer.output", 'fnSilicaOut2': prefix + ".silica.amplicon.output", 'genome': genome, 'pcrLen': 500, 'spacer': 50, 'nprimer': 100, 'PRIMER_MAX_TM': 63, 'PRIMER_MIN_TM': 57, 'PRIMER_OPT_TM': 60, 'PRIMER_OPT_SIZE': 22, 'PRIMER_MIN_SIZE': 20, 'PRIMER_MAX_SIZE': 25, 'maxmatch': 5}
+
+    # Load variants
+    variants = dict()
+    idcounter = 0
+    with open(filename, 'rb') as csvfile:
+        prireader = csv.DictReader(csvfile, delimiter='\t')
+        for row in prireader:
+            if not row['chr1'].startswith("#"):
+                variants[idcounter] = {'chr1': row['chr1'], 'pos1': int(row['pos1']), 'chr2': row['chr2'], 'pos2': int(row['pos2']), 'type': row['type'], 'done': False}
+                idcounter += 1
+
+    # Iterate parameters
+    vartodo = 0
+    for (pcrlen, spacer, nprimer, maxmatch) in [(250, 50, 25, 5), (500, 50, 100, 5), (1000, 50, 500, 50)]:
+    #for (pcrlen, spacer, nprimer) in [(500, 50, 100)]:
+        params['pcrLen'] = pcrlen
+        params['spacer'] = spacer
+        params['nprimer'] = nprimer
+        params['maxmatch'] = maxmatch
+        params['PRIMER_OPT_TM'] = 60
+        vartodo = primerDesignRun(params, variants)
+        if not vartodo:
+            break
+        print("Parameter iteration done. Remaining variants", vartodo)
+    if vartodo != 0:
+        print("Leftover variants no primers were found", vartodo)
+        for idname in range(idcounter):
+            if not variants[idname]['done']:
+                print(variants[idname])
+                variants[idname]['Primer1Chrom'] = 'n/a'
+                variants[idname]['Primer1Pos'] = 0
+                variants[idname]['Primer1Seq'] = 'n/a'
+                variants[idname]['Primer1Tm'] = 0
+                variants[idname]['Primer1Ori'] = 'n/a'
+                variants[idname]['Primer1Hits'] = 0
+                variants[idname]['Primer2Chrom'] = 'n/a'
+                variants[idname]['Primer2Pos'] = 0
+                variants[idname]['Primer2Seq'] = 'n/a'
+                variants[idname]['Primer2Tm'] = 0
+                variants[idname]['Primer2Ori'] = 'n/a'
+                variants[idname]['Primer2Hits'] = 0
+    return list(variants.values())
+
+
+    
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Verdin')
     parser.add_argument('-v', '--variants', required=True, metavar="variants.tsv", dest='variants', help='input variants')
