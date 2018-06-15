@@ -76,14 +76,15 @@ RUN cd /opt/silica/fm \
     && gunzip Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz \
     && bgzip Homo_sapiens.GRCh37.dna.primary_assembly.fa \
     && samtools faidx Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz \
-    && tracy -o Homo_sapiens.GRCh37.dna.primary_assembly.fa.fm9 Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz \
-    && rm Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz
+    && tracy -o Homo_sapiens.GRCh37.dna.primary_assembly.fa.fm9 Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz
+
 
 # generate links
 RUN cd /opt/verdin/fm \
     && ln -s /opt/silica/fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz.fai \
     && ln -s /opt/silica/fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz.gzi \
-    && ln -s /opt/silica/fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.fm9
+    && ln -s /opt/silica/fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.fm9 \
+    && ln -s /opt/silica/fm/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz
 
 WORKDIR /opt/verdin/server/
 EXPOSE 8666
