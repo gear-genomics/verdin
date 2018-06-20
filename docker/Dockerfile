@@ -23,7 +23,8 @@ RUN apt-get update && apt-get install -y  \
     python-pip \
     wget \
     zlib1g-dev \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # set environment
 ENV BOOST_ROOT /usr
